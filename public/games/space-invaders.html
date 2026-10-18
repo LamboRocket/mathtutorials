@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Galaxy Defender</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body {
+      background: #050508;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+    #wrap {
+      position: relative;
+      border: 2px solid #8b5cf6;
+      box-shadow: 0 0 25px rgba(139, 92, 246, 0.4);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    canvas { display: block; background: #0b0914; }
+    .overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(5, 5, 8, 0.9);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(4px);
+    }
+    .overlay.hidden { display: none; }
+    .btn {
+      padding: 10px 24px;
+      font-size: 16px;
+      font-weight: 800;
+      background: #8b5cf6;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-top: 14px;
+      box-shadow: 0 0 15px rgba(139, 92, 246, 0.5);
+    }
+    .controls-bar {
+      display: flex;
+      gap: 12px;
+      margin-top: 10px;
+    }
+    @media (min-width: 768px) {
+      .controls-bar { display: none; }
+    }
+    .c-btn {
+      padding: 10px 24px;
+      background: #1f1d2b;
+      border: 1px solid #3b3754;
+      color: #fff;
+      font-size: 18px;
+      border-radius: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <canvas id="game" width="440" height="520"></canvas>
+    <div id="startOverlay" class="overlay">
+      <h1 style="font-size:28px; color:#a78bfa; margin-bottom:8px;">GALAXY DEFENDER</h1>
+      <p style="color:#9ca3af; font-size:14px; text-align:center; max-width:280px;">Left / Right to fly starship.<br>Spacebar to blast alien invaders!</p>
+      <button id="startBtn" class="btn">ENGAGE</button>
+    </div>
+    <div id="deadOverlay" class="overlay hidden">
+      <h2 style="font-size:32px; color:#ef4444; margin-bottom:8px;">MOTHERSHIP DESTROYED</h2>
+      <p style="font-size:16px;">Score: <b id="finalScore" style="color:#a78bfa;">0</b></p>
+      <button id="restartBtn" class="btn">REDEPLOY</button>
+    </div>
+  </div>
+
+  <div class="controls-bar">
+    <button class="c-btn" id="m-left">◀</button>
+    <button class="c-btn" id="m-fire" style="background:#8b5cf6;">⚡ FIRE</button>
+    <button class="c-btn" id="m-right">▶</button>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const startOverlay = document.getElementById('startOverlay');
+    const deadOverlay = document.getElementById('deadOverlay');
+    const finalScoreEl = document.getElementById('finalScore');
+
+    let audioCtx = null;
+    function beep(f, t='square', d=0.08) {
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const o = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        o.type = t;
+        o.frequency.value = f;
+        g.gain.setValueAtTime(0.12, audioCtx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + d);
+        o.connect(g); g.connect(audioCtx.destination);
+        o.start(); o.stop(audioCtx.currentTime + d);
+      } catch (e) {}
+    }
+
+    let isPlaying = false;
+    let score = 0;
+    let lives = 3;
+    let wave = 1;
+    let player = { x: 200, y: 480, w: 28, h: 18, speed: 5 };
+    let playerLasers = [];
+    let enemyLasers = [];
+    let enemies = [];
+    let enemyDir = 1;
+    let enemySpeed = 1;
+    let keys = {};
+    let stars = [];
+
+    for (let i = 0; i < 50; i++) {
+      stars.push({ x: Math.random() * 440, y: Math.random() * 520, s: Math.random() * 2 + 0.5 });
+    }
+
+    function initEnemies() {
+      enemies = [];
+      const rows = 4;
+      const cols = 8;
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          enemies.push({
+            x: 40 + c * 44,
+            y: 50 + r * 32,
+            w: 26,
+            h: 18,
+            type: r,
+            pts: (4 - r) * 10
+          });
+        }
+      }
+      enemySpeed = 0.8 + wave * 0.2;
+    }
+
+    function reset() {
+      score = 0;
+      lives = 3;
+      wave = 1;
+      player.x = 200;
+      playerLasers = [];
+      enemyLasers = [];
+      initEnemies();
+      isPlaying = true;
+      startOverlay.classList.add('hidden');
+      deadOverlay.classList.add('hidden');
+    }
+
+    function fireLaser() {
+      if (!isPlaying || playerLasers.length >= 3) return;
+      playerLasers.push({ x: player.x + player.w / 2 - 2, y: player.y, w: 4, h: 12, speed: 7 });
+      beep(600, 'square', 0.06);
+    }
+
+    function update() {
+      if (!isPlaying) return;
+
+      // Stars
+      stars.forEach(s => {
+        s.y += s.s;
+        if (s.y > 520) s.y = 0;
+      });
+
+      // Player move
+      if (keys['ArrowLeft'] || keys['a']) player.x = Math.max(10, player.x - player.speed);
+      if (keys['ArrowRight'] || keys['d']) player.x = Math.min(canvas.width - player.w - 10, player.x + player.speed);
+
+      // Player lasers
+      playerLasers.forEach(l => l.y -= l.speed);
+      playerLasers = playerLasers.filter(l => l.y > -20);
+
+      // Enemy move
+      let changeDir = false;
+      enemies.forEach(e => {
+        e.x += enemyDir * enemySpeed;
+        if (e.x < 15 || e.x + e.w > canvas.width - 15) changeDir = true;
+      });
+
+      if (changeDir) {
+        enemyDir *= -1;
+        enemies.forEach(e => {
+          e.y += 10;
+          if (e.y + e.h >= player.y) {
+            die();
+          }
+        });
+      }
+
+      // Enemy fire
+      if (Math.random() < 0.03 && enemies.length > 0) {
+        const shooter = enemies[Math.floor(Math.random() * enemies.length)];
+        enemyLasers.push({ x: shooter.x + shooter.w / 2 - 2, y: shooter.y + shooter.h, w: 4, h: 10, speed: 3.5 });
+      }
+
+      enemyLasers.forEach(l => l.y += l.speed);
+      enemyLasers = enemyLasers.filter(l => l.y < 540);
+
+      // Laser collisions with enemies
+      playerLasers.forEach((l, lIdx) => {
+        enemies.forEach((e, eIdx) => {
+          if (l.x + l.w > e.x && l.x < e.x + e.w && l.y < e.y + e.h && l.y + l.h > e.y) {
+            score += e.pts;
+            beep(250, 'sawtooth', 0.1);
+            enemies.splice(eIdx, 1);
+            playerLasers.splice(lIdx, 1);
+          }
+        });
+      });
+
+      // Enemy laser collision with player
+      enemyLasers.forEach((l, lIdx) => {
+        if (l.x + l.w > player.x && l.x < player.x + player.w && l.y + l.h > player.y && l.y < player.y + player.h) {
+          enemyLasers.splice(lIdx, 1);
+          lives--;
+          beep(120, 'sawtooth', 0.3);
+          if (lives <= 0) die();
+        }
+      });
+
+      // Wave clear
+      if (enemies.length === 0) {
+        wave++;
+        initEnemies();
+        beep(800, 'triangle', 0.2);
+      }
+    }
+
+    function die() {
+      isPlaying = false;
+      finalScoreEl.textContent = score;
+      deadOverlay.classList.remove('hidden');
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Stars
+      ctx.fillStyle = '#6b7280';
+      stars.forEach(s => ctx.fillRect(s.x, s.y, s.s, s.s));
+
+      // HUD
+      ctx.fillStyle = '#a78bfa';
+      ctx.font = 'bold 15px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(`SCORE: ${score}`, 16, 26);
+      ctx.fillText(`WAVE: ${wave}`, 200, 26);
+      ctx.textAlign = 'right';
+      ctx.fillText(`SHIPS: ${'▲ '.repeat(Math.max(0, lives))}`, 424, 26);
+
+      // Player Starship
+      ctx.fillStyle = '#38bdf8';
+      ctx.shadowColor = '#38bdf8';
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.moveTo(player.x + player.w / 2, player.y);
+      ctx.lineTo(player.x + player.w, player.y + player.h);
+      ctx.lineTo(player.x + player.w / 2, player.y + player.h - 4);
+      ctx.lineTo(player.x, player.y + player.h);
+      ctx.closePath();
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+      // Player Lasers
+      ctx.fillStyle = '#22d3ee';
+      playerLasers.forEach(l => ctx.fillRect(l.x, l.y, l.w, l.h));
+
+      // Enemy Lasers
+      ctx.fillStyle = '#f43f5e';
+      enemyLasers.forEach(l => ctx.fillRect(l.x, l.y, l.w, l.h));
+
+      // Enemies
+      enemies.forEach(e => {
+        const colors = ['#f43f5e', '#fb923c', '#eab308', '#a855f7'];
+        ctx.fillStyle = colors[e.type % colors.length];
+        ctx.fillRect(e.x + 4, e.y, e.w - 8, 4);
+        ctx.fillRect(e.x, e.y + 4, e.w, 8);
+        ctx.fillRect(e.x + 2, e.y + 12, 4, 6);
+        ctx.fillRect(e.x + e.w - 6, e.y + 12, 4, 6);
+      });
+    }
+
+    function loop() {
+      update();
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    window.addEventListener('keydown', e => {
+      keys[e.key] = true;
+      if (e.key === ' ') {
+        e.preventDefault();
+        fireLaser();
+      }
+    });
+    window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+    document.getElementById('startBtn').addEventListener('click', reset);
+    document.getElementById('restartBtn').addEventListener('click', reset);
+
+    document.getElementById('m-left').addEventListener('touchstart', () => keys['ArrowLeft'] = true);
+    document.getElementById('m-left').addEventListener('touchend', () => keys['ArrowLeft'] = false);
+    document.getElementById('m-right').addEventListener('touchstart', () => keys['ArrowRight'] = true);
+    document.getElementById('m-right').addEventListener('touchend', () => keys['ArrowRight'] = false);
+    document.getElementById('m-fire').addEventListener('click', fireLaser);
+
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>

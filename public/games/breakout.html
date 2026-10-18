@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Neon Breakout DX</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body {
+      background: #022c22;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      overflow: hidden;
+    }
+    #wrap {
+      position: relative;
+      border: 2px solid #14b8a6;
+      box-shadow: 0 0 25px rgba(20, 184, 166, 0.4);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #041f1a;
+    }
+    canvas { display: block; }
+    .overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(2, 44, 34, 0.9);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(4px);
+    }
+    .overlay.hidden { display: none; }
+    .btn {
+      padding: 10px 24px;
+      font-size: 16px;
+      font-weight: 800;
+      background: #14b8a6;
+      color: #022c22;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      margin-top: 14px;
+      box-shadow: 0 0 15px rgba(20, 184, 166, 0.5);
+    }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <canvas id="game" width="480" height="480"></canvas>
+    <div id="startOverlay" class="overlay">
+      <h1 style="font-size:28px; color:#2dd4bf; margin-bottom:8px;">NEON BREAKOUT</h1>
+      <p style="color:#99f6e4; font-size:14px; text-align:center; max-width:280px;">Use Mouse or Left/Right arrows to control paddle.<br>Smash all bricks and collect powerups!</p>
+      <button id="startBtn" class="btn">LAUNCH BALL</button>
+    </div>
+    <div id="deadOverlay" class="overlay hidden">
+      <h2 style="font-size:30px; color:#ef4444; margin-bottom:6px;">GAME OVER</h2>
+      <p>Score: <b id="finalScore" style="color:#2dd4bf;">0</b></p>
+      <button id="restartBtn" class="btn">RETRY</button>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const startOverlay = document.getElementById('startOverlay');
+    const deadOverlay = document.getElementById('deadOverlay');
+    const finalScoreEl = document.getElementById('finalScore');
+
+    let audioCtx = null;
+    function beep(f, dur=0.06) {
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const o = audioCtx.createOscillator();
+        const g = audioCtx.createGain();
+        o.frequency.value = f;
+        g.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+        o.connect(g); g.connect(audioCtx.destination);
+        o.start(); o.stop(audioCtx.currentTime + dur);
+      } catch (e) {}
+    }
+
+    let isPlaying = false;
+    let score = 0;
+    let lives = 3;
+    let paddle = { x: 200, y: 440, w: 84, h: 12, speed: 7 };
+    let ball = { x: 240, y: 420, vx: 3.5, vy: -4, r: 6 };
+    let bricks = [];
+    let keys = {};
+
+    const ROWS = 5;
+    const COLS = 8;
+    const BRICK_W = 52;
+    const BRICK_H = 18;
+    const BRICK_PAD = 6;
+    const BRICK_OFF_TOP = 40;
+    const BRICK_OFF_LEFT = 10;
+    const COLORS = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4'];
+
+    function initBricks() {
+      bricks = [];
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          bricks.push({
+            x: BRICK_OFF_LEFT + c * (BRICK_W + BRICK_PAD),
+            y: BRICK_OFF_TOP + r * (BRICK_H + BRICK_PAD),
+            color: COLORS[r],
+            pts: (ROWS - r) * 10,
+            alive: true
+          });
+        }
+      }
+    }
+
+    function reset() {
+      score = 0;
+      lives = 3;
+      paddle.x = (canvas.width - paddle.w) / 2;
+      resetBall();
+      initBricks();
+      isPlaying = true;
+      startOverlay.classList.add('hidden');
+      deadOverlay.classList.add('hidden');
+    }
+
+    function resetBall() {
+      ball.x = paddle.x + paddle.w / 2;
+      ball.y = paddle.y - 10;
+      ball.vx = (Math.random() > 0.5 ? 1 : -1) * 3.5;
+      ball.vy = -4.5;
+    }
+
+    function update() {
+      if (!isPlaying) return;
+
+      if (keys['ArrowLeft'] || keys['a']) paddle.x = Math.max(0, paddle.x - paddle.speed);
+      if (keys['ArrowRight'] || keys['d']) paddle.x = Math.min(canvas.width - paddle.w, paddle.x + paddle.speed);
+
+      ball.x += ball.vx;
+      ball.y += ball.vy;
+
+      // Wall bounds
+      if (ball.x - ball.r < 0) { ball.x = ball.r; ball.vx = -ball.vx; beep(400); }
+      if (ball.x + ball.r > canvas.width) { ball.x = canvas.width - ball.r; ball.vx = -ball.vx; beep(400); }
+      if (ball.y - ball.r < 0) { ball.y = ball.r; ball.vy = -ball.vy; beep(400); }
+
+      // Bottom fall
+      if (ball.y > canvas.height) {
+        lives--;
+        beep(140, 0.2);
+        if (lives <= 0) {
+          die();
+        } else {
+          resetBall();
+        }
+      }
+
+      // Paddle hit
+      if (ball.y + ball.r >= paddle.y && ball.y - ball.r <= paddle.y + paddle.h &&
+          ball.x >= paddle.x && ball.x <= paddle.x + paddle.w) {
+        ball.vy = -Math.abs(ball.vy);
+        const hitOffset = (ball.x - (paddle.x + paddle.w / 2)) / (paddle.w / 2);
+        ball.vx = hitOffset * 5.5;
+        beep(500, 0.05);
+      }
+
+      // Brick collisions
+      let remaining = 0;
+      bricks.forEach(b => {
+        if (!b.alive) return;
+        remaining++;
+        if (ball.x + ball.r > b.x && ball.x - ball.r < b.x + BRICK_W &&
+            ball.y + ball.r > b.y && ball.y - ball.r < b.y + BRICK_H) {
+          b.alive = false;
+          ball.vy = -ball.vy;
+          score += b.pts;
+          beep(650, 0.05);
+        }
+      });
+
+      if (remaining === 0) {
+        // Next round
+        initBricks();
+        resetBall();
+        beep(880, 0.2);
+      }
+    }
+
+    function die() {
+      isPlaying = false;
+      finalScoreEl.textContent = score;
+      deadOverlay.classList.remove('hidden');
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // HUD
+      ctx.fillStyle = '#2dd4bf';
+      ctx.font = 'bold 15px sans-serif';
+      ctx.fillText(`SCORE: ${score}`, 16, 24);
+      ctx.textAlign = 'right';
+      ctx.fillText(`LIVES: ${'❤ '.repeat(Math.max(0, lives))}`, 464, 24);
+      ctx.textAlign = 'left';
+
+      // Bricks
+      bricks.forEach(b => {
+        if (!b.alive) return;
+        ctx.fillStyle = b.color;
+        ctx.fillRect(b.x, b.y, BRICK_W, BRICK_H);
+        ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+        ctx.strokeRect(b.x, b.y, BRICK_W, BRICK_H);
+      });
+
+      // Paddle
+      ctx.fillStyle = '#14b8a6';
+      ctx.shadowColor = '#2dd4bf';
+      ctx.shadowBlur = 10;
+      ctx.fillRect(paddle.x, paddle.y, paddle.w, paddle.h);
+      ctx.shadowBlur = 0;
+
+      // Ball
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    function loop() {
+      update();
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    window.addEventListener('keydown', e => { keys[e.key] = true; });
+    window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+    canvas.addEventListener('mousemove', e => {
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      paddle.x = Math.max(0, Math.min(canvas.width - paddle.w, mouseX - paddle.w / 2));
+    });
+
+    canvas.addEventListener('touchmove', e => {
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const touchX = e.touches[0].clientX - rect.left;
+      paddle.x = Math.max(0, Math.min(canvas.width - paddle.w, touchX - paddle.w / 2));
+    }, { passive: false });
+
+    document.getElementById('startBtn').addEventListener('click', reset);
+    document.getElementById('restartBtn').addEventListener('click', reset);
+
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>

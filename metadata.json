@@ -1,0 +1,6 @@
+{
+  "name": "ArcadePortal - Unblocked Games",
+  "description": "Fast, unblocked browser games portal featuring classic arcade, puzzle, and retro games stored as iframes in JSON with fullscreen and tab cloaking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

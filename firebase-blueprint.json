@@ -1,0 +1,71 @@
+{
+  "entities": {
+    "Game": {
+      "title": "Game",
+      "description": "An unblocked game with an iframe link and metadata",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the game",
+          "maxLength": 128
+        },
+        "title": {
+          "type": "string",
+          "description": "Title of the game",
+          "maxLength": 128
+        },
+        "category": {
+          "type": "string",
+          "description": "Category or genre of the game",
+          "maxLength": 64
+        },
+        "description": {
+          "type": "string",
+          "description": "Short description of the game",
+          "maxLength": 1000
+        },
+        "iframeUrl": {
+          "type": "string",
+          "description": "URL or path for the iframe game",
+          "maxLength": 1000
+        },
+        "thumbnail": {
+          "type": "string",
+          "description": "Thumbnail preview image URL",
+          "maxLength": 1000
+        },
+        "plays": {
+          "type": "string",
+          "description": "Plays counter",
+          "maxLength": 64
+        },
+        "controls": {
+          "type": "array",
+          "description": "List of key control hints"
+        },
+        "tags": {
+          "type": "array",
+          "description": "Tags for search and filtering"
+        },
+        "isCustom": {
+          "type": "boolean",
+          "description": "Whether the game is a custom added game"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Creation timestamp"
+        }
+      },
+      "required": ["title", "category", "iframeUrl"]
+    }
+  },
+  "firestore": {
+    "/games/{gameId}": {
+      "schema": {
+        "$ref": "#/entities/Game"
+      },
+      "description": "Public games catalog collection accessible to all users and editable by administrators"
+    }
+  }
+}
