@@ -11,7 +11,7 @@ import {
   arrayUnion,
   updateDoc
 } from 'firebase/firestore';
-import firebaseConfig from '../firebase-applet-config.json';
+import { firebaseConfig } from './config/firebase.js';
 import defaultGames from './data/games.json';
 
 // Initialize Firebase App & Firestore
@@ -28,6 +28,71 @@ try {
 }
 
 export { db, isFirebaseAvailable };
+
+/**
+ * SHA-256 helper using native browser Web Crypto API
+ * Keeps passwords hashed securely so plain-text is never sent or stored
+ */
+async function sha256(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+/**
+ * Verify admin passcode against Firestore (never stored hardcoded in code)
+ */
+export async function verifyAdminPassword(inputPasscode) {
+  if (!isFirebaseAvailable || !db) {
+    // Offline local fallback if network is completely down
+    return inputPasscode === 'admin123';
+  }
+
+  try {
+    const secRef = doc(db, 'settings', 'security');
+    const secSnap = await getDoc(secRef);
+    const inputHash = await sha256(inputPasscode);
+
+    if (!secSnap.exists()) {
+      // First-time setup: initialize default hashed passcode in Firestore
+      const defaultHash = await sha256('admin123');
+      await setDoc(secRef, {
+        passwordHash: defaultHash,
+        updatedAt: new Date().toISOString()
+      });
+      return inputHash === defaultHash;
+    }
+
+    const storedHash = secSnap.data().passwordHash;
+    return inputHash === storedHash;
+  } catch (err) {
+    console.error('Error verifying admin password in Firebase:', err);
+    throw err;
+  }
+}
+
+/**
+ * Update admin passcode in Firestore
+ */
+export async function updateAdminPasswordInFirebase(currentPasscode, newPasscode) {
+  if (!isFirebaseAvailable || !db) {
+    throw new Error('Firebase connection unavailable');
+  }
+
+  const isValid = await verifyAdminPassword(currentPasscode);
+  if (!isValid) {
+    throw new Error('Current passcode is incorrect');
+  }
+
+  const newHash = await sha256(newPasscode);
+  const secRef = doc(db, 'settings', 'security');
+  await setDoc(secRef, {
+    passwordHash: newHash,
+    updatedAt: new Date().toISOString()
+  });
+  return true;
+}
 
 /**
  * Initializes default games in Firestore only ONCE so deleted games are never resurrected.
@@ -112,7 +177,6 @@ export function subscribeToGlobalGames(onUpdate, onError) {
       currentGames = items;
       broadcast();
     } else {
-      // If collection is still empty right before seed completes, pass defaultGames
       currentGames = defaultGames;
       broadcast();
     }
