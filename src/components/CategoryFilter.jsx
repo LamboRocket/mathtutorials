@@ -55,7 +55,7 @@ export const CategoryFilter = ({
         })}
       </div>
 
-      {/* Clean Sort Selector */}
+      {/* Sort Selector */}
       <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto text-xs text-zinc-400">
         <ArrowUpDown className="w-3.5 h-3.5" />
         <select
@@ -64,6 +64,7 @@ export const CategoryFilter = ({
           aria-label="Sort games"
           className="bg-zinc-900 text-xs text-zinc-300 border border-zinc-800 rounded-lg px-2.5 py-1 focus:outline-none focus:border-indigo-500 cursor-pointer"
         >
+          <option value="rating">Top Rated (Most Starred)</option>
           <option value="popular">Most Played</option>
           <option value="title">A - Z</option>
         </select>

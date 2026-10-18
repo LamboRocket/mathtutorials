@@ -1,5 +1,5 @@
 import React from 'react';
-import { Star, Play, Gamepad2, Trash2 } from 'lucide-react';
+import { Star, Play, Gamepad2, Trash2, Flame } from 'lucide-react';
 
 export const GameCard = ({
   game,
@@ -38,13 +38,12 @@ export const GameCard = ({
           </span>
         </div>
 
-        {/* Top-Right Action: Favorite and Admin Delete */}
+        {/* Top-Right Action: Favorite/Upvote and Admin Delete */}
         <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-10">
           {isAdmin && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                // Pass game to open the custom in-app confirmation modal
                 onDeleteGame(game);
               }}
               title="Delete game from portal for all users"
@@ -56,7 +55,7 @@ export const GameCard = ({
 
           <button
             onClick={(e) => onToggleFavorite(e, game.id)}
-            title={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+            title={isFavorite ? 'Remove star (decrements rating in Firebase)' : 'Star this game (increments rating in Firebase)'}
             className={`w-7 h-7 rounded-full flex items-center justify-center backdrop-blur-sm transition-all ${
               isFavorite
                 ? 'bg-amber-500 text-zinc-950 shadow-sm'
@@ -72,6 +71,12 @@ export const GameCard = ({
           <div className="w-11 h-11 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-lg shadow-indigo-600/40">
             <Play className="w-5 h-5 fill-white ml-0.5" />
           </div>
+        </div>
+
+        {/* Live Firebase Rating Badge */}
+        <div className="absolute bottom-2 right-2.5 flex items-center gap-1 text-[11px] font-bold text-amber-300 bg-zinc-950/85 backdrop-blur-sm px-2 py-0.5 rounded-md border border-zinc-800">
+          <Star className="w-3 h-3 fill-amber-400 text-amber-400" />
+          <span>{game.rating || 0}</span>
         </div>
       </div>
 

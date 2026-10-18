@@ -9,6 +9,7 @@ import {
   subscribeToGlobalGames, 
   addGlobalGame, 
   removeGlobalGame, 
+  toggleGameRatingInFirebase,
   isFirebaseAvailable 
 } from './firebase.js';
 import { Header } from './components/Header.jsx';
@@ -18,14 +19,16 @@ import { GamePlayer } from './components/GamePlayer.jsx';
 import { AddGameModal } from './components/AddGameModal.jsx';
 import { AdminLoginModal } from './components/AdminLoginModal.jsx';
 import { DeleteConfirmModal } from './components/DeleteConfirmModal.jsx';
-import { Gamepad2, Play, Clock, Cloud } from 'lucide-react';
+import { GameOfTheWeek } from './components/GameOfTheWeek.jsx';
+import { StealthStudyScreen } from './components/StealthStudyScreen.jsx';
+import { Gamepad2, Play, Clock, Cloud, Sparkles } from 'lucide-react';
 
 export default function App() {
   const [games, setGames] = useState(initialGamesData);
   const [selectedGame, setSelectedGame] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState('popular');
+  const [sortBy, setSortBy] = useState('rating'); // Default to top rated / starred!
   const [favorites, setFavorites] = useState([]);
   const [recentGameIds, setRecentGameIds] = useState([]);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -33,6 +36,7 @@ export default function App() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [gameToDelete, setGameToDelete] = useState(null);
   const [isCloudSynced, setIsCloudSynced] = useState(false);
+  const [isStealthMode, setIsStealthMode] = useState(false);
 
   // 1. Real-time Firebase Sync & Fallback
   useEffect(() => {
@@ -80,8 +84,23 @@ export default function App() {
       try { setRecentGameIds(JSON.parse(savedRecent)); } catch (e) {}
     }
 
-    return () => unsubscribe && unsubscribe();
-  }, []);
+    // Emergency Panic / Stealth hotkey (ESC or ~)
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        if (selectedGame) {
+          setSelectedGame(null);
+        } else {
+          setIsStealthMode(prev => !prev);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [selectedGame]);
 
   // 2. Admin Authentication
   const handleAdminLogin = () => {
@@ -106,14 +125,29 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // 4. Toggle Favorite
+  // 4. Toggle Favorite (Ups rating in Firebase for all users to see)
   const toggleFavorite = (e, gameId) => {
     e.stopPropagation();
+    const isAdding = !favorites.includes(gameId);
+
+    // 1. Update user's local favorites
     setFavorites(prev => {
-      const next = prev.includes(gameId) ? prev.filter(id => id !== gameId) : [...prev, gameId];
+      const next = isAdding ? [...prev, gameId] : prev.filter(id => id !== gameId);
       localStorage.setItem('arcadeportal_favorites', JSON.stringify(next));
       return next;
     });
+
+    // 2. Optimistic local rating update
+    setGames(prev => prev.map(g => {
+      if (g.id === gameId) {
+        const currentRating = typeof g.rating === 'number' ? g.rating : 10;
+        return { ...g, rating: Math.max(0, currentRating + (isAdding ? 1 : -1)) };
+      }
+      return g;
+    }));
+
+    // 3. Increment/Decrement rating in Firebase Firestore (broadcasts to all users)
+    toggleGameRatingInFirebase(gameId, isAdding);
   };
 
   // 5. Add Game (Admin only - updates Firestore for everyone)
@@ -169,7 +203,7 @@ export default function App() {
     return counts;
   }, [games]);
 
-  // Filtered & sorted games (without ratings)
+  // Filtered & sorted games (with live Firebase ratings)
   const filteredGames = useMemo(() => {
     return games
       .filter(game => {
@@ -190,6 +224,9 @@ export default function App() {
         return true;
       })
       .sort((a, b) => {
+        if (sortBy === 'rating') {
+          return (b.rating || 0) - (a.rating || 0);
+        }
         if (sortBy === 'title') return a.title.localeCompare(b.title);
         const parsePlays = (p) => {
           if (!p) return 0;
@@ -209,6 +246,11 @@ export default function App() {
       .filter(Boolean);
   }, [recentGameIds, games]);
 
+  // If in Emergency Stealth / Study Mode, show Calculus & Physics guide
+  if (isStealthMode) {
+    return <StealthStudyScreen onExit={() => setIsStealthMode(false)} />;
+  }
+
   return (
     <div className="min-h-screen bg-[#090b10] text-zinc-100 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
       
@@ -220,6 +262,7 @@ export default function App() {
         onOpenAddModal={() => setIsAddModalOpen(true)}
         onOpenAdminLogin={() => setIsAdminModalOpen(true)}
         onAdminLogout={handleAdminLogout}
+        onTriggerStealth={() => setIsStealthMode(true)}
       />
 
       <main className="flex-1 pb-16">
@@ -233,6 +276,16 @@ export default function App() {
         ) : (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
             
+            {/* Game of the Week Banner (Updates Weekly!) */}
+            {!searchQuery && selectedCategory === 'All' && (
+              <GameOfTheWeek
+                games={games}
+                onSelectGame={handleSelectGame}
+                isFavorite={favorites.includes(games[0]?.id)}
+                onToggleFavorite={toggleFavorite}
+              />
+            )}
+
             {/* Jump Back In (Recently Played) */}
             {!searchQuery && selectedCategory === 'All' && recentGames.length > 0 && (
               <div className="mb-8">
@@ -298,10 +351,10 @@ export default function App() {
               <div className="py-20 text-center rounded-2xl border border-dashed border-zinc-800/80 bg-zinc-950/30">
                 <Gamepad2 className="w-10 h-10 text-zinc-700 mx-auto mb-2" />
                 <h3 className="font-bold text-base text-white mb-1">
-                  No games found
+                  No activities found
                 </h3>
                 <p className="text-xs text-zinc-500 max-w-xs mx-auto">
-                  {searchQuery ? `No results for "${searchQuery}"` : "No games available in this category."}
+                  {searchQuery ? `No results for "${searchQuery}"` : "No items available in this category."}
                 </p>
                 {searchQuery && (
                   <button
@@ -318,19 +371,19 @@ export default function App() {
         )}
       </main>
 
-      {/* Clean Footer */}
+      {/* Clean Footer - Sam Elite */}
       <footer className="border-t border-zinc-800/60 bg-zinc-950 py-5 text-center text-xs text-zinc-500">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <span>ArcadePortal &bull; Free Unblocked Browser Games</span>
+            <span>Sam Elite &bull; Interactive Tools & Learning Hub</span>
             {isCloudSynced && (
               <span className="flex items-center gap-1 text-[11px] text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-2 py-0.5 rounded-full">
                 <Cloud className="w-3 h-3" />
-                <span>Global Realtime Sync</span>
+                <span>Live Cloud Sync</span>
               </span>
             )}
           </div>
-          <span>{games.length} Games Available</span>
+          <span>{games.length} Activities Available</span>
         </div>
       </footer>
 

@@ -32,7 +32,7 @@ class ErrorBoundary extends React.Component {
           textAlign: 'center',
           fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
         }}>
-          <h2 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '8px' }}>ArcadePortal</h2>
+          <h2 style={{ fontSize: '24px', fontWeight: 'bold', marginBottom: '8px' }}>Sam Elite</h2>
           <p style={{ color: '#a1a1aa', fontSize: '14px', maxWidth: '400px', marginBottom: '20px' }}>
             A temporary issue occurred while loading. Click below to reload.
           </p>
@@ -48,7 +48,7 @@ class ErrorBoundary extends React.Component {
               cursor: 'pointer'
             }}
           >
-            Reload ArcadePortal
+            Reload Sam Elite
           </button>
         </div>
       );

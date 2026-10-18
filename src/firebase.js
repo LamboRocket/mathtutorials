@@ -9,7 +9,8 @@ import {
   getDocs,
   getDoc,
   arrayUnion,
-  updateDoc
+  updateDoc,
+  increment
 } from 'firebase/firestore';
 import { firebaseConfig } from './config/firebase.js';
 import defaultGames from './data/games.json';
@@ -45,7 +46,6 @@ async function sha256(str) {
  */
 export async function verifyAdminPassword(inputPasscode) {
   if (!isFirebaseAvailable || !db) {
-    // Offline local fallback if network is completely down
     return inputPasscode === 'admin123';
   }
 
@@ -55,7 +55,6 @@ export async function verifyAdminPassword(inputPasscode) {
     const inputHash = await sha256(inputPasscode);
 
     if (!secSnap.exists()) {
-      // First-time setup: initialize default hashed passcode in Firestore
       const defaultHash = await sha256('admin123');
       await setDoc(secRef, {
         passwordHash: defaultHash,
@@ -95,6 +94,24 @@ export async function updateAdminPasswordInFirebase(currentPasscode, newPasscode
 }
 
 /**
+ * Increments or decrements a game's global rating in Firestore when favorited
+ * Real-time listener immediately reflects this to ALL users on the website
+ */
+export async function toggleGameRatingInFirebase(gameId, isAdding) {
+  if (!isFirebaseAvailable || !db) return;
+
+  try {
+    const gameRef = doc(db, 'games', gameId);
+    // Use setDoc with merge to ensure field is updated/created seamlessly
+    await setDoc(gameRef, {
+      rating: increment(isAdding ? 1 : -1)
+    }, { merge: true });
+  } catch (err) {
+    console.warn('Could not update rating in Firestore:', err);
+  }
+}
+
+/**
  * Initializes default games in Firestore only ONCE so deleted games are never resurrected.
  */
 async function ensureFirestoreInitialized() {
@@ -105,8 +122,8 @@ async function ensureFirestoreInitialized() {
     const initDocSnap = await getDoc(initDocRef);
 
     if (!initDocSnap.exists()) {
-      // First-time seed of initial games
-      const seedPromises = defaultGames.map(g => {
+      // First-time seed of initial games with baseline rating
+      const seedPromises = defaultGames.map((g, index) => {
         return setDoc(doc(db, 'games', g.id), {
           id: g.id,
           title: g.title,
@@ -115,6 +132,7 @@ async function ensureFirestoreInitialized() {
           iframeUrl: g.iframeUrl,
           thumbnail: g.thumbnail,
           plays: g.plays || '100K',
+          rating: 25 + (index * 7), // baseline initial rating
           controls: g.controls || [],
           tags: g.tags || [],
           isCustom: false,
@@ -133,7 +151,7 @@ async function ensureFirestoreInitialized() {
 
 /**
  * Real-time listener for the global games collection
- * Automatically broadcasts deletions and additions to ALL users in real time.
+ * Automatically broadcasts deletions, additions, and ratings to ALL users in real time.
  */
 export function subscribeToGlobalGames(onUpdate, onError) {
   if (!isFirebaseAvailable || !db) {
@@ -172,12 +190,17 @@ export function subscribeToGlobalGames(onUpdate, onError) {
     if (!snapshot.empty) {
       const items = [];
       snapshot.forEach(docSnap => {
-        items.push({ id: docSnap.id, ...docSnap.data() });
+        const data = docSnap.data();
+        items.push({ 
+          id: docSnap.id, 
+          ...data,
+          rating: typeof data.rating === 'number' ? data.rating : 10
+        });
       });
       currentGames = items;
       broadcast();
     } else {
-      currentGames = defaultGames;
+      currentGames = defaultGames.map(g => ({ ...g, rating: 20 }));
       broadcast();
     }
   }, (err) => {
@@ -208,6 +231,7 @@ export async function addGlobalGame(newGame) {
     iframeUrl: newGame.iframeUrl,
     thumbnail: newGame.thumbnail || '',
     plays: newGame.plays || '1',
+    rating: 1, // initial rating for newly created games
     controls: newGame.controls || [],
     tags: newGame.tags || [],
     isCustom: true,
@@ -225,11 +249,9 @@ export async function removeGlobalGame(gameId) {
   }
 
   try {
-    // 1. Delete document from games collection
     const gameDocRef = doc(db, 'games', gameId);
     await deleteDoc(gameDocRef);
 
-    // 2. Add to global deleted list so it stays deleted across all clients
     const deletedRef = doc(db, 'settings', 'deleted');
     const snap = await getDoc(deletedRef);
     if (snap.exists()) {
