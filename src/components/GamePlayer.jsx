@@ -5,7 +5,8 @@ import {
   Minimize2, 
   RotateCcw, 
   Star, 
-  Keyboard
+  Keyboard,
+  Edit3
 } from 'lucide-react';
 import { resolveGameUrl } from '../utils/url.js';
 
@@ -13,7 +14,9 @@ export const GamePlayer = ({
   game,
   isFavorite,
   onToggleFavorite,
-  onBack
+  onBack,
+  isAdmin,
+  onEditGame
 }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [iframeKey, setIframeKey] = useState(0);
@@ -76,6 +79,18 @@ export const GamePlayer = ({
               {game.rating || 0}
             </span>
           </button>
+
+          {/* Admin Edit Game */}
+          {isAdmin && (
+            <button
+              onClick={() => onEditGame && onEditGame(game)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-950 hover:bg-indigo-900 text-indigo-300 hover:text-white border border-indigo-700/80 text-xs font-semibold transition-all shadow-sm"
+              title="Edit thumbnail & game info"
+            >
+              <Edit3 className="w-3.5 h-3.5" />
+              <span>Edit Game</span>
+            </button>
+          )}
 
           {/* Restart */}
           <button

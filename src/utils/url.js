@@ -1,6 +1,9 @@
 /**
- * Resolves relative URLs for GitHub Pages compatibility
- * Supports standalone full URLs (https://...) and relative paths (games/slope.html)
+ * Resolves relative URLs for GitHub Pages compatibility and Games folder games.
+ * Supports:
+ * - External URLs (https://...)
+ * - Games folder paths (Games/mygame.html or games/slope.html)
+ * - Raw HTML filenames (mygame.html -> auto-prefixed with Games/)
  */
 export function resolveGameUrl(url) {
   if (!url) return '';
@@ -9,10 +12,14 @@ export function resolveGameUrl(url) {
     return url;
   }
   // Remove leading slash if present
-  const cleanPath = url.startsWith('/') ? url.slice(1) : url;
-  const baseUrl = import.meta.env.BASE_URL || './';
+  let cleanPath = url.startsWith('/') ? url.slice(1) : url;
   
-  // Ensure baseUrl ends with slash
+  // If only a filename was provided (e.g. 'subwaysurfers.html'), prefix with Games/
+  if (!cleanPath.toLowerCase().startsWith('games/')) {
+    cleanPath = `Games/${cleanPath}`;
+  }
+
+  const baseUrl = import.meta.env.BASE_URL || './';
   const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
   return `${normalizedBase}${cleanPath}`;
 }

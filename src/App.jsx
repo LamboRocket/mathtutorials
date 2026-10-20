@@ -9,6 +9,7 @@ import {
   subscribeToGlobalGames, 
   addGlobalGame, 
   removeGlobalGame, 
+  updateGlobalGame,
   toggleGameRatingInFirebase,
   isFirebaseAvailable 
 } from './firebase.js';
@@ -17,6 +18,7 @@ import { CategoryFilter } from './components/CategoryFilter.jsx';
 import { GameCard } from './components/GameCard.jsx';
 import { GamePlayer } from './components/GamePlayer.jsx';
 import { AddGameModal } from './components/AddGameModal.jsx';
+import { EditGameModal } from './components/EditGameModal.jsx';
 import { AdminLoginModal } from './components/AdminLoginModal.jsx';
 import { DeleteConfirmModal } from './components/DeleteConfirmModal.jsx';
 import { GameOfTheWeek } from './components/GameOfTheWeek.jsx';
@@ -28,13 +30,14 @@ export default function App() {
   const [selectedGame, setSelectedGame] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState('rating'); // Default to top rated / starred!
+  const [sortBy, setSortBy] = useState('rating'); // Default to top rated / starred
   const [favorites, setFavorites] = useState([]);
   const [recentGameIds, setRecentGameIds] = useState([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [gameToDelete, setGameToDelete] = useState(null);
+  const [gameToEdit, setGameToEdit] = useState(null);
   const [isCloudSynced, setIsCloudSynced] = useState(false);
   const [isStealthMode, setIsStealthMode] = useState(false);
 
@@ -84,11 +87,11 @@ export default function App() {
       try { setRecentGameIds(JSON.parse(savedRecent)); } catch (e) {}
     }
 
-    // Emergency Panic / Stealth hotkey (ESC or ~)
+    // Emergency Panic / Stealth hotkey (ESC)
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
         if (selectedGame) {
-          setSelectedGame(null);
+          handleBackToHub();
         } else {
           setIsStealthMode(prev => !prev);
         }
@@ -102,7 +105,26 @@ export default function App() {
     };
   }, [selectedGame]);
 
-  // 2. Admin Authentication
+  // 2. Direct URL deep-linking support ("creates a page for each site without hurting performance")
+  useEffect(() => {
+    const checkUrlRoute = () => {
+      const hash = window.location.hash.replace(/^#/, '');
+      if (hash && games.length > 0) {
+        const found = games.find(g => g.id === hash || g.title.toLowerCase().replace(/[^a-z0-9]/g, '-') === hash);
+        if (found && (!selectedGame || selectedGame.id !== found.id)) {
+          setSelectedGame(found);
+        }
+      } else if (!hash && selectedGame) {
+        setSelectedGame(null);
+      }
+    };
+
+    checkUrlRoute();
+    window.addEventListener('hashchange', checkUrlRoute);
+    return () => window.removeEventListener('hashchange', checkUrlRoute);
+  }, [games]);
+
+  // 3. Admin Authentication
   const handleAdminLogin = () => {
     setIsAdmin(true);
     sessionStorage.setItem('arcadeportal_is_admin', 'true');
@@ -113,9 +135,10 @@ export default function App() {
     sessionStorage.removeItem('arcadeportal_is_admin');
   };
 
-  // 3. Select game to play
+  // 4. Select game to play & update URL hash
   const handleSelectGame = (game) => {
     setSelectedGame(game);
+    window.location.hash = game.id;
     setRecentGameIds(prev => {
       const filtered = prev.filter(id => id !== game.id);
       const next = [game.id, ...filtered].slice(0, 8);
@@ -125,7 +148,15 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // 4. Toggle Favorite (Ups rating in Firebase for all users to see)
+  // 5. Back to Hub
+  const handleBackToHub = () => {
+    setSelectedGame(null);
+    if (window.location.hash) {
+      history.replaceState(null, '', window.location.pathname);
+    }
+  };
+
+  // 6. Toggle Favorite (Ups rating in Firebase for all users to see)
   const toggleFavorite = (e, gameId) => {
     e.stopPropagation();
     const isAdding = !favorites.includes(gameId);
@@ -150,7 +181,7 @@ export default function App() {
     toggleGameRatingInFirebase(gameId, isAdding);
   };
 
-  // 5. Add Game (Admin only - updates Firestore for everyone)
+  // 7. Add Game (Admin only - updates Firestore for everyone)
   const handleAddGame = async (newGame) => {
     // Optimistic local update
     setGames(prev => [newGame, ...prev]);
@@ -170,7 +201,30 @@ export default function App() {
     handleSelectGame(newGame);
   };
 
-  // 6. Delete Game (Admin only - removes from Firestore for everyone)
+  // 8. Edit Game (Admin only - updates Firestore for everyone)
+  const handleUpdateGame = async (gameId, updatedData) => {
+    // 1. Optimistic local update
+    setGames(prev => prev.map(g => g.id === gameId ? { ...g, ...updatedData } : g));
+    if (selectedGame?.id === gameId) {
+      setSelectedGame(prev => ({ ...prev, ...updatedData }));
+    }
+
+    // 2. Update custom backup
+    const savedCustom = localStorage.getItem('arcadeportal_custom_games');
+    if (savedCustom) {
+      const customGames = JSON.parse(savedCustom).map(g => g.id === gameId ? { ...g, ...updatedData } : g);
+      localStorage.setItem('arcadeportal_custom_games', JSON.stringify(customGames));
+    }
+
+    // 3. Save directly to Firebase Firestore permanently for everyone
+    try {
+      await updateGlobalGame(gameId, updatedData);
+    } catch (err) {
+      console.error('Error updating game in Firebase:', err);
+    }
+  };
+
+  // 9. Delete Game (Admin only - removes from Firestore for everyone)
   const handleDeleteGame = async (gameId) => {
     // 1. Optimistic local removal
     setGames(prev => prev.filter(g => g.id !== gameId));
@@ -190,7 +244,7 @@ export default function App() {
     }
 
     if (selectedGame?.id === gameId) {
-      setSelectedGame(null);
+      handleBackToHub();
     }
   };
 
@@ -271,7 +325,9 @@ export default function App() {
             game={selectedGame}
             isFavorite={favorites.includes(selectedGame.id)}
             onToggleFavorite={toggleFavorite}
-            onBack={() => setSelectedGame(null)}
+            onBack={handleBackToHub}
+            isAdmin={isAdmin}
+            onEditGame={(g) => setGameToEdit(g)}
           />
         ) : (
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
@@ -344,6 +400,7 @@ export default function App() {
                     onSelectGame={handleSelectGame}
                     isAdmin={isAdmin}
                     onDeleteGame={(targetGame) => setGameToDelete(targetGame)}
+                    onEditGame={(targetGame) => setGameToEdit(targetGame)}
                   />
                 ))}
               </div>
@@ -399,6 +456,14 @@ export default function App() {
         isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
         onAddGame={handleAddGame}
+      />
+
+      {/* Edit Game Modal (Admin can update thumbnail from computer, saved in Firebase!) */}
+      <EditGameModal
+        isOpen={Boolean(gameToEdit)}
+        game={gameToEdit}
+        onClose={() => setGameToEdit(null)}
+        onUpdateGame={handleUpdateGame}
       />
 
       {/* Delete Confirmation Modal (Replaces blocked window.confirm) */}

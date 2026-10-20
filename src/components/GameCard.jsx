@@ -1,5 +1,5 @@
 import React from 'react';
-import { Star, Play, Gamepad2, Trash2, Flame } from 'lucide-react';
+import { Star, Play, Gamepad2, Trash2, Edit3 } from 'lucide-react';
 
 export const GameCard = ({
   game,
@@ -7,7 +7,8 @@ export const GameCard = ({
   onToggleFavorite,
   onSelectGame,
   isAdmin,
-  onDeleteGame
+  onDeleteGame,
+  onEditGame
 }) => {
   return (
     <div
@@ -38,24 +39,37 @@ export const GameCard = ({
           </span>
         </div>
 
-        {/* Top-Right Action: Favorite/Upvote and Admin Delete */}
+        {/* Top-Right Action: Admin Edit, Admin Delete, and Favorite/Upvote */}
         <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 z-10">
           {isAdmin && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onDeleteGame(game);
-              }}
-              title="Delete game from portal for all users"
-              className="w-7 h-7 rounded-full flex items-center justify-center bg-rose-950/90 hover:bg-rose-800 text-rose-300 hover:text-white border border-rose-800 transition-colors shadow-sm"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-            </button>
+            <>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEditGame && onEditGame(game);
+                }}
+                title="Edit thumbnail & details (Admin)"
+                className="w-7 h-7 rounded-full flex items-center justify-center bg-indigo-950/90 hover:bg-indigo-800 text-indigo-300 hover:text-white border border-indigo-700 transition-colors shadow-sm"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDeleteGame(game);
+                }}
+                title="Delete game from portal for all users"
+                className="w-7 h-7 rounded-full flex items-center justify-center bg-rose-950/90 hover:bg-rose-800 text-rose-300 hover:text-white border border-rose-800 transition-colors shadow-sm"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            </>
           )}
 
           <button
             onClick={(e) => onToggleFavorite(e, game.id)}
-            title={isFavorite ? 'Remove star (decrements rating in Firebase)' : 'Star this game (increments rating in Firebase)'}
+            title={isFavorite ? 'Remove star' : 'Star this game (increments rating in Firebase)'}
             className={`w-7 h-7 rounded-full flex items-center justify-center backdrop-blur-sm transition-all ${
               isFavorite
                 ? 'bg-amber-500 text-zinc-950 shadow-sm'

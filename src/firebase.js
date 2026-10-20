@@ -269,3 +269,23 @@ export async function removeGlobalGame(gameId) {
     throw err;
   }
 }
+
+/**
+ * Update an existing game in Firestore (Admin action - updates thumbnail, metadata, etc. for ALL users)
+ */
+export async function updateGlobalGame(gameId, updatedData) {
+  if (!isFirebaseAvailable || !db) {
+    return false;
+  }
+  try {
+    const gameDocRef = doc(db, 'games', gameId);
+    await setDoc(gameDocRef, {
+      ...updatedData,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+    return true;
+  } catch (err) {
+    console.error('Failed to update game in Firestore:', err);
+    throw err;
+  }
+}

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { X, Plus, AlertCircle, ShieldCheck, Image as ImageIcon } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { X, Plus, AlertCircle, ShieldCheck, Image as ImageIcon, Upload } from 'lucide-react';
+import { processImageFile } from '../utils/image.js';
 
 const THUMBNAIL_PRESETS = [
   { name: 'Neon Arcade', url: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=600&q=80' },
@@ -22,8 +23,28 @@ export const AddGameModal = ({
   const [controls, setControls] = useState('Arrow Keys: Move, Space: Action');
   const [thumbnail, setThumbnail] = useState(THUMBNAIL_PRESETS[0].url);
   const [error, setError] = useState('');
+  const [isProcessingImage, setIsProcessingImage] = useState(false);
+  const fileInputRef = useRef(null);
 
   if (!isOpen) return null;
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setError('');
+    setIsProcessingImage(true);
+
+    try {
+      const optimizedDataUrl = await processImageFile(file);
+      setThumbnail(optimizedDataUrl);
+    } catch (err) {
+      setError(err.message || 'Could not process image file');
+    } finally {
+      setIsProcessingImage(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -32,7 +53,7 @@ export const AddGameModal = ({
       return;
     }
     if (!iframeUrl.trim()) {
-      setError('Please provide an iframe URL.');
+      setError('Please provide an iframe URL or file path (e.g. Games/mygame.html).');
       return;
     }
 
@@ -49,8 +70,9 @@ export const AddGameModal = ({
       title: title.trim(),
       category: category,
       plays: '1',
+      rating: 1,
       tags: ['Custom', category.toLowerCase()],
-      description: description.trim() || 'Custom iframe game.',
+      description: description.trim() || 'Interactive HTML5 activity.',
       iframeUrl: cleanUrl,
       controls: controls.split(',').map(s => s.trim()).filter(Boolean),
       thumbnail: thumbnail.trim() || THUMBNAIL_PRESETS[0].url,
@@ -67,7 +89,7 @@ export const AddGameModal = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150 overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-150 overflow-y-auto">
       <div className="relative w-full max-w-lg bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl p-6 my-8">
         
         {/* Header */}
@@ -78,7 +100,7 @@ export const AddGameModal = ({
             </div>
             <div>
               <h2 className="text-base font-bold text-white">Add Game (Admin)</h2>
-              <p className="text-[11px] text-zinc-400">Add an iframe game and customize thumbnail</p>
+              <p className="text-[11px] text-zinc-400">Add an HTML game file or web embed</p>
             </div>
           </div>
           <button
@@ -106,7 +128,7 @@ export const AddGameModal = ({
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. Retro Bowl, 1v1 LOL"
+                placeholder="e.g. Retro Bowl, 1v1 LOL, Slope"
                 className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-indigo-500"
                 required
               />
@@ -133,37 +155,34 @@ export const AddGameModal = ({
 
           <div>
             <label className="block text-xs font-semibold text-zinc-300 mb-1">
-              Iframe URL or Embed Code *
+              File Path or Iframe URL *
             </label>
             <input
               type="text"
               value={iframeUrl}
               onChange={(e) => setIframeUrl(e.target.value)}
-              placeholder="https://... or <iframe src='...'>"
+              placeholder="e.g. Games/mygame.html or https://..."
               className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-indigo-500 font-mono text-xs"
               required
             />
+            <p className="text-[10px] text-zinc-500 mt-1">
+              For files in your Games folder, enter <b>Games/filename.html</b>
+            </p>
           </div>
 
-          {/* Thumbnail Selection & Preview */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="text-xs font-semibold text-zinc-300 flex items-center gap-1.5">
+          {/* Thumbnail Selection & Computer Upload */}
+          <div className="bg-zinc-950/70 border border-zinc-800/80 rounded-xl p-3.5 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <label className="text-xs font-bold text-zinc-200 flex items-center gap-1.5">
                 <ImageIcon className="w-3.5 h-3.5 text-indigo-400" />
                 <span>Thumbnail Cover Image</span>
               </label>
-              <span className="text-[11px] text-zinc-500">URL or select preset below</span>
+              <span className="text-[10px] text-zinc-400">Stores in Firebase</span>
             </div>
 
-            <div className="flex gap-3 items-center">
-              <input
-                type="url"
-                value={thumbnail}
-                onChange={(e) => setThumbnail(e.target.value)}
-                placeholder="Enter image URL (https://...)"
-                className="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-indigo-500 text-xs"
-              />
-              <div className="w-14 h-10 rounded-lg overflow-hidden border border-zinc-800 bg-zinc-950 shrink-0">
+            <div className="flex items-center gap-3">
+              {/* Preview */}
+              <div className="w-20 h-14 rounded-lg overflow-hidden border border-zinc-800 bg-zinc-950 shrink-0 relative flex items-center justify-center">
                 {thumbnail ? (
                   <img
                     src={thumbnail}
@@ -172,13 +191,57 @@ export const AddGameModal = ({
                     onError={(e) => { e.target.style.opacity = '0.3'; }}
                   />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-zinc-700 text-[10px]">None</div>
+                  <span className="text-[10px] text-zinc-600">No Image</span>
                 )}
+                {isProcessingImage && (
+                  <div className="absolute inset-0 bg-black/70 flex items-center justify-center text-[10px] text-white">
+                    Processing...
+                  </div>
+                )}
+              </div>
+
+              {/* Upload from Computer Button */}
+              <div className="flex-1 space-y-1.5">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept="image/png, image/jpeg, image/webp, image/gif"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+                
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl bg-indigo-600/90 hover:bg-indigo-600 text-white text-xs font-semibold shadow-md shadow-indigo-600/20 transition-all cursor-pointer"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>Choose Image from Computer</span>
+                </button>
+
+                <p className="text-[10px] text-zinc-400 text-center">
+                  Select any PNG or JPG from your computer
+                </p>
               </div>
             </div>
 
-            {/* Thumbnail Quick Presets */}
-            <div className="mt-2 flex items-center gap-1.5 overflow-x-auto pb-1">
+            {/* Optional URL input */}
+            <div>
+              <input
+                type="text"
+                value={thumbnail.startsWith('data:') ? '[Uploaded Image from Computer]' : thumbnail}
+                onChange={(e) => {
+                  if (!e.target.value.startsWith('[Uploaded')) {
+                    setThumbnail(e.target.value);
+                  }
+                }}
+                placeholder="Or paste an image URL (https://...)"
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-2.5 py-1.5 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-indigo-500 font-mono"
+              />
+            </div>
+
+            {/* Presets */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
               <span className="text-[10px] text-zinc-500 shrink-0">Presets:</span>
               {THUMBNAIL_PRESETS.map((preset) => (
                 <button
@@ -188,7 +251,7 @@ export const AddGameModal = ({
                   className={`px-2 py-0.5 rounded text-[10px] font-medium border transition-colors shrink-0 ${
                     thumbnail === preset.url
                       ? 'bg-indigo-950 border-indigo-600 text-indigo-300'
-                      : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-zinc-200'
+                      : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200'
                   }`}
                 >
                   {preset.name}
@@ -218,7 +281,7 @@ export const AddGameModal = ({
               rows={2}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Short description of the game..."
+              placeholder="Short description of the activity..."
               className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-indigo-500 text-xs resize-none"
             />
           </div>
@@ -235,7 +298,7 @@ export const AddGameModal = ({
               type="submit"
               className="px-4 py-1.5 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/30"
             >
-              Add Game
+              Add Game to Portal
             </button>
           </div>
         </form>
